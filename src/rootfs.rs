@@ -2,7 +2,7 @@
 //! Most systems mount another filesystem over it
 
 use crate::utils::PathBufExt;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use nix::errno::Errno;
 use nix::fcntl::{open, OFlag};
 use nix::mount::mount as nix_mount;
@@ -11,7 +11,9 @@ use nix::sys::stat::Mode;
 use nix::sys::stat::{mknod, umask};
 use nix::unistd::{chown, close};
 use nix::unistd::{Gid, Uid};
+use nix::NixPath;
 use oci_spec::{LinuxDevice, LinuxDeviceType, Mount, Spec};
+use procfs::process::{MountInfo, MountOptFields, Process};
 use std::fs::OpenOptions;
 use std::fs::{canonicalize, create_dir_all, remove_file};
 use std::os::unix::fs::symlink;
@@ -34,6 +36,8 @@ pub fn prepare_rootfs(spec: &Spec, rootfs: &Path, bind_devices: bool) -> Result<
 
     nix_mount(None::<&str>, "/", None::<&str>, flags, None::<&str>)
         .context("Failed to mount rootfs")?;
+
+    make_parent_mount_private(rootfs)?;
 
     log::debug!("mount root fs {:?}", rootfs);
     nix_mount::<Path, Path, str, str>(
@@ -377,4 +381,63 @@ fn parse_mount(m: &Mount) -> (MsFlags, String) {
         }
     }
     (flags, data.join(","))
+}
+
+fn get_parent_mount(rootfs: &Path) -> Result<MountInfo> {
+    let mount_infos = Process::myself()?.mountinfo()?;
+    if mount_infos.is_empty() {
+        bail!("couldn't find parent mount of {}", rootfs.display());
+    }
+
+    // find the longest mount point
+    // TODO: debug chosen mount point is really what we want
+    let parent_mount_info = mount_infos
+        .into_iter()
+        .filter(|mi| rootfs.starts_with(&mi.mount_point))
+        .max_by(|mi1, mi2| mi1.mount_point.len().cmp(&mi2.mount_point.len()))
+        .ok_or_else(|| anyhow!("couldn't find parent mount of {}", rootfs.display()))?;
+
+    Ok(parent_mount_info)
+}
+
+// TODO: add more comments
+/// Make parent mount private it it was shared.
+fn make_parent_mount_private(rootfs: &Path) -> Result<()> {
+    let parent_mount = get_parent_mount(rootfs)?;
+
+    log::debug!("parent_mount: {:?}", parent_mount);
+
+    // check parent mount point is 'shared'
+    if parent_mount.opt_fields.iter().any(|field| {
+        // FIXME
+        return if let MountOptFields::Shared(_) = field {
+            true
+        } else {
+            false
+        };
+    }) {
+        log::debug!("make parent mount point private");
+        nix_mount(
+            None::<&str>,
+            &parent_mount.mount_point,
+            None::<&str>,
+            MsFlags::MS_PRIVATE,
+            None::<&str>,
+        )?;
+    }
+
+    Ok(())
+}
+
+pub fn make_root_mount_shared(rootfs: &Path) -> Result<()> {
+    log::debug!("make parent mount point shared");
+    nix_mount(
+        None::<&str>,
+        "/",
+        None::<&str>,
+        MsFlags::MS_SHARED,
+        None::<&str>,
+    )?;
+
+    Ok(())
 }

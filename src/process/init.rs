@@ -366,6 +366,14 @@ pub fn container_init(
                 .with_context(|| format!("Failed to chroot to {:?}", rootfs))?;
         }
 
+        if let Some("shared") = spec
+            .linux
+            .as_ref()
+            .and_then(|l| l.rootfs_propagation.as_deref())
+        {
+            rootfs::make_root_mount_shared(rootfs)?;
+        }
+
         if let Some(kernel_params) = &linux.sysctl {
             sysctl(kernel_params)
                 .with_context(|| format!("Failed to sysctl: {:?}", kernel_params))?;
