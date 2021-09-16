@@ -28,6 +28,7 @@ pub fn prepare_rootfs(spec: &Spec, rootfs: &Path, bind_devices: bool) -> Result<
             "shared" => flags |= MsFlags::MS_SHARED,
             "private" => flags |= MsFlags::MS_PRIVATE,
             "slave" => flags |= MsFlags::MS_SLAVE,
+            "unbindable" => flags |= MsFlags::MS_SLAVE,
             uknown => bail!("unknown rootfs_propagation: {}", uknown),
         }
     } else {
@@ -429,15 +430,20 @@ fn make_parent_mount_private(rootfs: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn make_root_mount_shared(rootfs: &Path) -> Result<()> {
-    log::debug!("make parent mount point shared");
-    nix_mount(
-        None::<&str>,
-        "/",
-        None::<&str>,
-        MsFlags::MS_SHARED,
-        None::<&str>,
-    )?;
+pub fn adjust_root_mount_propagation(spec: &Spec) -> Result<()> {
+    let linux = spec.linux.as_ref().context("no linux in spec")?;
+    let rootfs_propagation = linux.rootfs_propagation.as_deref();
+    let flags = match rootfs_propagation {
+        Some("shared") => MsFlags::MS_SHARED,
+        Some("private") => MsFlags::MS_PRIVATE,
+        Some("slave") => MsFlags::MS_SLAVE,
+        Some("unbindable") => MsFlags::MS_UNBINDABLE,
+        None => MsFlags::MS_SLAVE,
+        unknown => bail!("unknown rootfs_propagation: {:?}", unknown),
+    };
+
+    log::debug!("make parent mount point {:?}", flags);
+    nix_mount(None::<&str>, "/", None::<&str>, flags, None::<&str>)?;
 
     Ok(())
 }
