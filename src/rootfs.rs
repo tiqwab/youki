@@ -447,8 +447,13 @@ pub fn adjust_root_mount_propagation(linux: &Linux) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::{Context, Result};
-    use procfs::process::MountInfo;
+    use crate::rootfs::make_parent_mount_private;
+    use anyhow::{anyhow, Context, Result};
+    use nix::mount::{mount, MsFlags};
+    use nix::sched::{clone, CloneFlags};
+    use nix::sys::signal::Signal;
+    use nix::sys::wait::waitpid;
+    use procfs::process::{MountInfo, MountOptFields, Process};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -491,5 +496,89 @@ mod tests {
         let mount_infos = vec![];
         let res = super::find_parent_mount(Path::new("/path/to/rootfs"), &mount_infos);
         assert!(res.is_err());
+    }
+
+    fn find_mount_by_target_path(path: &Path) -> Result<MountInfo> {
+        let mount_infos = Process::myself()?.mountinfo()?;
+        mount_infos
+            .into_iter()
+            .find(|mi| mi.mount_point == path)
+            .ok_or_else(|| anyhow!("no mount for {:?} is found", path))
+    }
+
+    fn is_mount_shared(mi: &MountInfo) -> bool {
+        mi.opt_fields
+            .iter()
+            .any(|field| matches!(field, MountOptFields::Shared(_)))
+    }
+
+    fn is_mount_slave(mi: &MountInfo) -> bool {
+        mi.opt_fields
+            .iter()
+            .any(|field| matches!(field, MountOptFields::Master(_)))
+    }
+
+    #[test]
+    fn test_make_parent_mount_private() -> Result<()> {
+        let child_func = || {
+            // all mount points are slave at first
+
+            let root_mount = find_mount_by_target_path(Path::new("/")).unwrap();
+            assert!(!is_mount_shared(&root_mount));
+            assert!(is_mount_slave(&root_mount));
+
+            // make all mount points private
+            mount(
+                Some("/"),
+                "/",
+                None::<&str>,
+                MsFlags::MS_PRIVATE | MsFlags::MS_REC,
+                None::<&str>,
+            )
+            .unwrap();
+
+            let root_mount = find_mount_by_target_path(Path::new("/")).unwrap();
+            assert!(!is_mount_shared(&root_mount));
+            assert!(!is_mount_slave(&root_mount));
+
+            // make root mount shared
+            mount(
+                Some("/"),
+                "/",
+                None::<&str>,
+                MsFlags::MS_SHARED,
+                None::<&str>,
+            )
+            .unwrap();
+
+            let root_mount = find_mount_by_target_path(Path::new("/")).unwrap();
+            println!("root mount: {:?}", root_mount);
+            assert!(is_mount_shared(&root_mount));
+
+            make_parent_mount_private(Path::new("/path/to/rootfs")).unwrap();
+
+            let root_mount = find_mount_by_target_path(Path::new("/")).unwrap();
+            println!("root mount: {:?}", root_mount);
+            assert!(!is_mount_shared(&root_mount));
+
+            // std::thread::sleep(std::time::Duration::from_secs(20));
+            0 as isize
+        };
+
+        const STACK_SIZE: usize = 1024 * 1024;
+        let mut stack = [0; STACK_SIZE];
+
+        let child_pid = clone(
+            Box::new(child_func),
+            &mut stack,
+            CloneFlags::CLONE_NEWUSER | CloneFlags::CLONE_NEWNS,
+            Some(Signal::SIGCHLD as libc::c_int),
+        )?;
+
+        println!("child_pid: {}", child_pid);
+        let exit_status = waitpid(child_pid, None).unwrap();
+        println!("child finished: {:?}", exit_status);
+
+        Ok(())
     }
 }
