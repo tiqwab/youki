@@ -122,9 +122,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "3.0.0-beta.2"
+version = "3.0.0-beta.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "370f715b81112975b1b69db93e0b56ea4cd4e5002ac43b2da8474106a54096a1"
+checksum = "8b15c6b4f786ffb6192ffe65a36855bc1fc2444bcd0945ae16748dcd6ed7d0d3"
 dependencies = [
  "heck",
  "proc-macro-error",
@@ -611,7 +611,7 @@ dependencies = [
  "clap_derive",
  "flate2",
  "libcontainer",
- "nix",
+ "nix 0.22.0",
  "oci-spec",
  "once_cell",
  "procfs",
@@ -664,7 +664,7 @@ dependencies = [
  "libbpf-sys",
  "libc",
  "log",
- "nix",
+ "nix 0.23.0",
  "oci-spec",
  "procfs",
  "quickcheck",
@@ -690,7 +690,7 @@ dependencies = [
  "libseccomp",
  "log",
  "mio",
- "nix",
+ "nix 0.23.0",
  "oci-spec",
  "path-clean",
  "prctl",
@@ -793,6 +793,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9f1c5b025cda876f66ef43a113f91ebc9f4ccef34843000e0adf6ebbab84e21"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "nix"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf1e25ee6b412c2a1e3fcb6a4499a5c1bfe7f43e014bdce9a6b6666e5aa2d187"
+dependencies = [
+ "bitflags",
+ "cc",
+ "cfg-if",
+ "libc",
+ "memoffset",
 ]
 
 [[package]]
@@ -943,7 +956,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "059a34f111a9dee2ce1ac2826a68b24601c4298cfeb1a587c3cb493d5ab46f52"
 dependencies = [
  "libc",
- "nix",
+ "nix 0.23.0",
 ]
 
 [[package]]
@@ -1398,7 +1411,7 @@ dependencies = [
  "libcgroups",
  "libcontainer",
  "log",
- "nix",
+ "nix 0.23.0",
  "oci-spec",
  "once_cell",
  "pentacle",
